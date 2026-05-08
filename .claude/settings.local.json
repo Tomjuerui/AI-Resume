@@ -12,7 +12,9 @@
       "Bash(PATH=\"/c/nvm4w/nodejs:$PATH\" npm install 2>&1)",
       "Bash(python -c \":*)",
       "Bash(netstat -ano)",
-      "Bash(taskkill //F //PID 17972)"
+      "Bash(taskkill //F //PID 17972)",
+      "Bash(python -c \"from main import app; print\\(''Backend imports OK''\\)\")",
+      "Bash(python test_pipeline.py)"
     ]
   }
 }

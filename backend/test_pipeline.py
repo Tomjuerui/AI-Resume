@@ -12,8 +12,8 @@ from pathlib import Path
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from services import pdf_service, llm_service
-from models.schemas import AnalysisResponse, CandidateInfo, AnalysisData
+from services import pdf_service, llm_service, match_service
+from models.schemas import AnalysisResponse, CandidateInfo, AnalysisData, DimensionScore
 
 
 # ── Test Helpers ──
@@ -253,6 +253,173 @@ def test_oss_config_detection():
     print("  PASSED\n")
 
 
+def test_jd_keyword_extraction():
+    """Test JD keyword extraction."""
+    print("=" * 60)
+    print("TEST 7: JD Keyword Extraction")
+    print("=" * 60)
+
+    jd = """
+    高级Java开发工程师
+    要求：精通Java、Spring Boot、微服务架构，熟悉Docker和Kubernetes，
+    有5年以上开发经验，本科及以上学历，计算机相关专业，
+    具备良好的沟通能力和团队协作精神。
+    """
+    keywords = match_service.extract_jd_keywords(jd)
+
+    assert "java" in keywords["skills"], "Should extract Java"
+    assert "docker" in keywords["skills"], "Should extract Docker"
+    assert "kubernetes" in keywords["skills"], "Should extract Kubernetes"
+    assert "spring" in keywords["skills"], "Should extract Spring"
+    print(f"  Skills found: {len(keywords['skills'])} — {keywords['skills']}")
+
+    assert len(keywords["soft_skills"]) > 0, "Should extract soft skills"
+    print(f"  Soft skills: {keywords['soft_skills']}")
+
+    assert len(keywords["education"]) > 0, "Should extract education"
+    print(f"  Education: {keywords['education']}")
+
+    assert len(keywords["experience"]) > 0, "Should extract experience"
+    print(f"  Experience: {keywords['experience']}")
+
+    print("  PASSED\n")
+
+
+def test_rule_based_matching():
+    """Test rule-based JD matching and scoring."""
+    print("=" * 60)
+    print("TEST 8: Rule-Based JD Matching & Scoring")
+    print("=" * 60)
+
+    resume = """
+    张三
+    电话：13800138000 | 邮箱：zhangsan@test.com
+    教育：计算机科学 硕士
+    技能：Java, Spring Boot, Docker, MySQL, Redis
+    工作经历：
+    - ABC公司 高级Java开发 5年
+    - 负责微服务架构设计与开发
+    - 参与高并发项目
+    """
+
+    jd = """
+    高级Java开发工程师
+    要求：精通Java、Spring Boot、微服务，熟悉Docker、Kubernetes，
+    5年以上开发经验，本科及以上，计算机相关专业，
+    良好的沟通能力和团队合作精神。
+    """
+
+    result = match_service.calculate_rule_match(resume, jd)
+
+    assert "overall_score" in result
+    assert result["overall_score"] > 0, "Should have positive score"
+    print(f"  Overall score: {result['overall_score']}/100")
+
+    assert len(result["dimensions"]) == 4, "Should have 4 dimensions"
+    for dim in result["dimensions"]:
+        assert 0 <= dim["score"] <= 100, f"Score out of range: {dim}"
+        print(f"  {dim['name']}: {dim['score']} — {dim['reason']}")
+
+    assert "risks" in result
+    print(f"  Risks: {result['risks']}")
+
+    print("  PASSED\n")
+
+
+def test_rule_matching_empty_jd():
+    """Test rule matching with empty JD."""
+    print("=" * 60)
+    print("TEST 9: Rule Matching — Empty JD")
+    print("=" * 60)
+
+    result = match_service.calculate_rule_match("some resume text", "")
+    assert result["overall_score"] == 0
+    assert len(result["dimensions"]) == 0
+    assert len(result["risks"]) > 0, "Should warn about missing JD"
+    print(f"  Score: {result['overall_score']}")
+    print(f"  Risks: {result['risks']}")
+    print("  PASSED\n")
+
+
+def test_rule_matching_skill_gap():
+    """Test matching when resume lacks JD skills."""
+    print("=" * 60)
+    print("TEST 10: Rule Matching — Skill Gap Detection")
+    print("=" * 60)
+
+    resume = "张三 前端开发 React Vue CSS"
+    jd = "高级Java工程师 精通Java Spring Docker Kubernetes"
+
+    result = match_service.calculate_rule_match(resume, jd)
+
+    # Should have low skill match score
+    skill_dim = [d for d in result["dimensions"] if d["name"] == "技能匹配度"][0]
+    assert skill_dim["score"] < 60, f"Skill score should be low for mismatched skills, got {skill_dim['score']}"
+    print(f"  Skill match score: {skill_dim['score']} (expected low)")
+
+    # Should have risks about missing skills
+    assert any("缺失技能" in r for r in result["risks"]), \
+        f"Should report missing skills, risks: {result['risks']}"
+    print(f"  Risks: {result['risks']}")
+
+    print("  PASSED\n")
+
+
+def test_provider_config():
+    """Test provider configuration presets."""
+    print("=" * 60)
+    print("TEST 11: LLM Provider Configuration")
+    print("=" * 60)
+
+    from core.config import PROVIDER_CONFIG, settings
+
+    providers = ["openai", "deepseek", "qianwen"]
+    for p in providers:
+        cfg = PROVIDER_CONFIG[p]
+        assert "base_url" in cfg, f"{p} should have base_url"
+        assert "default_model" in cfg, f"{p} should have default_model"
+        print(f"  {p}: base_url={cfg['base_url']}, model={cfg['default_model']}")
+
+    print(f"  Current provider: {settings.llm_provider}")
+    print(f"  Effective API key configured: {bool(settings.effective_api_key and not settings.effective_api_key.startswith('sk-your-'))}")
+
+    print("  PASSED\n")
+
+
+def test_schema_with_dimensions():
+    """Test schema serialization with real match data."""
+    print("=" * 60)
+    print("TEST 12: Schema — Match Data Serialization")
+    print("=" * 60)
+
+    response = AnalysisResponse(
+        code=200,
+        message="解析成功",
+        data=AnalysisData(
+            candidate_info=CandidateInfo(name="赵六", phone="13800000000"),
+            overall_score=78,
+            dimensions=[
+                DimensionScore(name="技能匹配度", score=85, reason="匹配Java/Spring/Docker"),
+                DimensionScore(name="经验相关性", score=70, reason="5年相关经验"),
+                DimensionScore(name="教育背景", score=90, reason="硕士学历符合要求"),
+                DimensionScore(name="综合素养", score=65, reason="沟通能力良好"),
+            ],
+            risk_tips=["缺失技能：Kubernetes", "项目经验描述不够详细"],
+            raw_json={"skill_details": "..."},
+        ),
+    )
+
+    json_str = response.model_dump_json()
+    data = json.loads(json_str)
+
+    assert data["code"] == 200
+    assert data["data"]["overall_score"] == 78
+    assert len(data["data"]["dimensions"]) == 4
+    assert len(data["data"]["risk_tips"]) == 2
+    print(f"  Serialized: {json_str[:120]}...")
+    print("  PASSED\n")
+
+
 # ── Main ──
 
 async def main():
@@ -269,6 +436,12 @@ async def main():
         ("Schema Validation", test_schema_validation),
         ("PDF Parse Error Handling", test_pdf_parse_error),
         ("OSS Configuration", test_oss_config_detection),
+        ("JD Keyword Extraction", test_jd_keyword_extraction),
+        ("Rule-Based JD Matching", test_rule_based_matching),
+        ("Rule Matching — Empty JD", test_rule_matching_empty_jd),
+        ("Rule Matching — Skill Gap", test_rule_matching_skill_gap),
+        ("LLM Provider Configuration", test_provider_config),
+        ("Schema — Match Data Serialization", test_schema_with_dimensions),
     ]
 
     for name, test_fn in tests:

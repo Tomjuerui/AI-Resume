@@ -27,6 +27,7 @@ class AnalysisData(BaseModel):
     candidate_info: CandidateInfo = Field(default_factory=CandidateInfo)
     overall_score: int = 0
     dimensions: list[DimensionScore] = Field(default_factory=list)
+    risk_tips: list[str] = Field(default_factory=list)
     raw_json: dict = Field(default_factory=dict)
 
 

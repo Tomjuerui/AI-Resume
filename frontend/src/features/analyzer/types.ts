@@ -17,6 +17,7 @@ export interface AnalysisData {
   candidate_info: CandidateInfo
   overall_score: number
   dimensions: DimensionScore[]
+  risk_tips: string[]
   raw_json: Record<string, unknown>
 }
 
