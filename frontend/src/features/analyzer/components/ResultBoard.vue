@@ -56,6 +56,10 @@ const { result, loading, error } = useAnalyzer()
             <dt class="text-gray-500 w-20">Email:</dt>
             <dd class="text-gray-800">{{ result.data.candidate_info.email || '-' }}</dd>
           </div>
+          <div class="flex gap-2">
+            <dt class="text-gray-500 w-20">Address:</dt>
+            <dd class="text-gray-800">{{ result.data.candidate_info.address || '-' }}</dd>
+          </div>
         </dl>
       </div>
     </div>

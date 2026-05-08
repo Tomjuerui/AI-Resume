@@ -9,7 +9,10 @@
       "Bash(npm install:*)",
       "Bash(command -v node)",
       "Bash(where node:*)",
-      "Bash(PATH=\"/c/nvm4w/nodejs:$PATH\" npm install 2>&1)"
+      "Bash(PATH=\"/c/nvm4w/nodejs:$PATH\" npm install 2>&1)",
+      "Bash(python -c \":*)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //F //PID 17972)"
     ]
   }
 }

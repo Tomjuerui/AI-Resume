@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── Request ──
@@ -14,6 +14,7 @@ class CandidateInfo(BaseModel):
     name: str = ""
     phone: str = ""
     email: str = ""
+    address: str = ""
 
 
 class DimensionScore(BaseModel):
@@ -23,13 +24,19 @@ class DimensionScore(BaseModel):
 
 
 class AnalysisData(BaseModel):
-    candidate_info: CandidateInfo
-    overall_score: int
-    dimensions: list[DimensionScore]
-    raw_json: dict = {}
+    candidate_info: CandidateInfo = Field(default_factory=CandidateInfo)
+    overall_score: int = 0
+    dimensions: list[DimensionScore] = Field(default_factory=list)
+    raw_json: dict = Field(default_factory=dict)
 
 
 class AnalysisResponse(BaseModel):
     code: int = 200
     message: str = "解析成功"
     data: AnalysisData | None = None
+
+
+class ErrorResponse(BaseModel):
+    code: int
+    message: str
+    detail: str = ""

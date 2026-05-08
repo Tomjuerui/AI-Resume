@@ -4,6 +4,7 @@ export interface CandidateInfo {
   name: string
   phone: string
   email: string
+  address: string
 }
 
 export interface DimensionScore {
