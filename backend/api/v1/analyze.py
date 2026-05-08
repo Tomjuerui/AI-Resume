@@ -6,7 +6,11 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, UploadFile
 
 from core.exceptions import FileValidationError, LLMCallError, ScannedPdfError
-from models.schemas import AnalysisData, AnalysisResponse, CandidateInfo, DimensionScore
+from models.schemas import (
+    AnalysisData, AnalysisResponse,
+    CandidateInfo, DeepExtraction, DimensionScore,
+    ProjectItem, SkillItem, WorkExperience,
+)
 from services import pdf_service, llm_service, match_service
 
 logger = logging.getLogger(__name__)
@@ -22,25 +26,18 @@ def _regex_extract(text: str) -> dict:
     """Basic regex-based extraction as fallback when LLM is unavailable."""
     result: dict = {"name": "", "phone": "", "email": "", "address": ""}
 
-    # Phone: Chinese mobile
     phone_match = re.search(r'1[3-9]\d{9}', text)
     if phone_match:
         result["phone"] = phone_match.group()
-        logger.info("Regex extracted phone: %s", result["phone"])
 
-    # Email
     email_match = re.search(r'[\w.-]+@[\w.-]+\.\w+', text)
     if email_match:
         result["email"] = email_match.group()
-        logger.info("Regex extracted email: %s", result["email"])
 
-    # Name: simple heuristic — look for "姓名：XXX" pattern
     name_match = re.search(r'姓名[：:]\s*(\S{2,4})', text)
     if name_match:
         result["name"] = name_match.group(1)
-        logger.info("Regex extracted name: %s", result["name"])
 
-    # Address: look for city/province patterns
     addr_match = re.search(
         r'(?:地址|所在地|现居)[：:]\s*(.{5,40}?)(?:\n|$)',
         text
@@ -76,7 +73,7 @@ async def analyze_resume(
     file: UploadFile = File(...),
     jd_text: str = Form(...),
 ):
-    """Upload a PDF resume and JD. Returns extracted info + match scores."""
+    """Upload a PDF resume and JD. Returns deep extraction + rubric-based match scores."""
     # 1. Read file bytes + validate
     file_bytes = await file.read()
     validate_file(file, file_bytes)
@@ -104,45 +101,92 @@ async def analyze_resume(
                 "不支持扫描件，请提供文本型 PDF（非图片版）"
             )
 
-        # 5. Extract candidate info (LLM preferred, regex fallback)
+        # ── 5. Deep Extraction (P1) — candidate profile ──
+        deep_extraction: DeepExtraction | None = None
+        extraction: dict = {}
         try:
-            extraction = await llm_service.extract_resume_info(cleaned_text)
-            logger.info("LLM extraction succeeded")
+            deep_result = await llm_service.extract_resume_deep(cleaned_text)
+            extraction = deep_result  # also use for basic info
+            # Normalize languages: LLM may return strings or {name, level} dicts
+            raw_languages = deep_result.get("languages", [])
+            normalized_languages: list[str] = []
+            for lang in raw_languages:
+                if isinstance(lang, dict) and lang.get("name"):
+                    level = lang.get("level", "")
+                    normalized_languages.append(
+                        f"{lang['name']} ({level})" if level else lang["name"]
+                    )
+                elif isinstance(lang, str):
+                    normalized_languages.append(lang)
+
+            deep_extraction = DeepExtraction(
+                name=deep_result.get("name", ""),
+                phone=deep_result.get("phone", ""),
+                email=deep_result.get("email", ""),
+                address=deep_result.get("address", ""),
+                years_of_experience=deep_result.get("years_of_experience", ""),
+                highest_degree=deep_result.get("highest_degree", ""),
+                school=deep_result.get("school", ""),
+                major=deep_result.get("major", ""),
+                skills=[SkillItem(**s) for s in deep_result.get("skills", [])],
+                work_experience=[WorkExperience(**w) for w in deep_result.get("work_experience", [])],
+                projects=[ProjectItem(**p) for p in deep_result.get("projects", [])],
+                certificates=deep_result.get("certificates", []),
+                languages=normalized_languages,
+            )
+            logger.info("Deep extraction OK: skills=%d, work=%d, projects=%d",
+                        len(deep_extraction.skills),
+                        len(deep_extraction.work_experience),
+                        len(deep_extraction.projects))
         except LLMCallError as e:
-            logger.warning("LLM extraction unavailable, using regex: %s", e)
-            extraction = _regex_extract(cleaned_text)
+            logger.warning("Deep extraction failed, using basic: %s", e)
+            try:
+                extraction = await llm_service.extract_resume_info(cleaned_text)
+            except LLMCallError:
+                extraction = _regex_extract(cleaned_text)
 
         candidate_info = CandidateInfo(
             name=extraction.get("name", ""),
             phone=extraction.get("phone", ""),
             email=extraction.get("email", ""),
             address=extraction.get("address", ""),
+            years_of_experience=extraction.get("years_of_experience", ""),
+            highest_degree=extraction.get("highest_degree", ""),
+            school=extraction.get("school", ""),
+            major=extraction.get("major", ""),
         )
 
-        # 6. Rule-based keyword matching (P0)
+        # ── 6. Rule-based matching (P0, always runs as fallback) ──
         rule_match = match_service.calculate_rule_match(cleaned_text, jd_text)
 
-        # 7. LLM semantic matching (P1) — try, fallback to rule-based
+        # ── 7. AI Rubric Scoring (P1) ──
         overall_score = rule_match["overall_score"]
-        dimensions = [
-            DimensionScore(**d) for d in rule_match["dimensions"]
-        ]
-        risks = rule_match.get("risks", [])
+        summary = ""
+        dimensions: list[DimensionScore] = []
+        missing_skills: list[str] = []
 
         try:
-            llm_match = await llm_service.match_resume_to_jd(cleaned_text, jd_text)
-            # LLM takes priority for scores when available
-            if llm_match.get("dimensions"):
-                dimensions = [DimensionScore(**d) for d in llm_match["dimensions"]]
-            if llm_match.get("overall_score", 0) > 0:
-                overall_score = llm_match["overall_score"]
-            if llm_match.get("risks"):
-                risks = llm_match["risks"]
-            logger.info("LLM match used: overall=%d", overall_score)
+            rubric = await llm_service.score_resume_vs_jd(cleaned_text, jd_text)
+            if rubric.get("dimensions"):
+                dimensions = [DimensionScore(**d) for d in rubric["dimensions"]]
+            if rubric.get("overall_score", 0) > 0:
+                overall_score = rubric["overall_score"]
+            if rubric.get("summary"):
+                summary = rubric["summary"]
+            if rubric.get("missing_skills"):
+                missing_skills = rubric["missing_skills"]
+            logger.info("Rubric scoring used: overall=%d, summary=%s",
+                        overall_score, summary[:50])
         except LLMCallError as e:
-            logger.warning("LLM match failed, using rule-based: %s", e)
+            logger.warning("Rubric scoring failed, using rule-based: %s", e)
+            dimensions = [DimensionScore(**d) for d in rule_match["dimensions"]]
+            missing_skills = [
+                r.replace("缺失技能：", "") for r in rule_match.get("risks", [])
+                if r.startswith("缺失技能：")
+            ]
         except Exception as e:
-            logger.warning("LLM match unexpected error, using rule-based: %s", e)
+            logger.warning("Rubric scoring unexpected error, using rule-based: %s", e)
+            dimensions = [DimensionScore(**d) for d in rule_match["dimensions"]]
 
         return AnalysisResponse(
             code=200,
@@ -150,8 +194,11 @@ async def analyze_resume(
             data=AnalysisData(
                 candidate_info=candidate_info,
                 overall_score=overall_score,
+                summary=summary,
                 dimensions=dimensions,
-                risk_tips=risks,
+                missing_skills=missing_skills,
+                risk_tips=rule_match.get("risks", []),
+                deep_extraction=deep_extraction,
                 raw_json=extraction,
             ),
         )

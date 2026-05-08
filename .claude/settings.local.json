@@ -14,7 +14,31 @@
       "Bash(netstat -ano)",
       "Bash(taskkill //F //PID 17972)",
       "Bash(python -c \"from main import app; print\\(''Backend imports OK''\\)\")",
-      "Bash(python test_pipeline.py)"
+      "Bash(python test_pipeline.py)",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(__NEW_LINE_9299be33f2213e4d__ cd:*)",
+      "Bash(python -c \"from core.config import settings; print\\(f''Provider: {settings.llm_provider}''\\); print\\(f''Model: {settings.llm_model}''\\); print\\(f''API Key configured: {bool\\(settings.effective_api_key and not settings.effective_api_key.startswith\\(\"\"sk-your-\"\"\\)\\)}''\\)\")",
+      "Bash(npx vue-tsc:*)",
+      "Bash(pip install:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/health)",
+      "Bash(timeout 5 python -c \"from main import app; print\\(''App imported OK''\\)\")",
+      "Bash(python -c \"from main import app; print\\(''App imported OK''\\)\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/v1/analyze -F \"file=@test_resume.pdf\" -F \"jd_text=We are looking for a Senior Python Developer with experience in microservices, Docker, and React. Must have a Masters degree in Computer Science. AWS certification is a plus.\")",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -X POST http://localhost:8000/api/v1/analyze -F \"file=@test_resume.pdf\" -F \"jd_text=Looking for Senior Python Developer with microservices Docker experience.\")",
+      "Bash(curl -v -X POST http://localhost:8000/api/v1/analyze -F \"file=@test_resume.pdf\" -F \"jd_text=test JD\")",
+      "Bash(taskkill //F //IM uvicorn.exe)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2, ensure_ascii=False\\)\\)\")",
+      "Bash(/c/nvm4w/nodejs/npm run:*)",
+      "Bash(export PATH=\"/c/nvm4w/nodejs:/d/develop:$PATH\")",
+      "Bash(npm run:*)",
+      "Bash(/c/nvm4w/nodejs/node --version)",
+      "Bash(/d/develop/node --version)",
+      "Bash(export PATH=\"/c/nvm4w/nodejs:$PATH\")",
+      "Bash(npm ls:*)",
+      "Bash(npx vite:*)",
+      "Bash(taskkill //F //PID 26976)",
+      "Bash(rm -f test_resume.pdf response.json)"
     ]
   }
 }

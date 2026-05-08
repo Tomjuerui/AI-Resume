@@ -33,6 +33,17 @@ class Settings(BaseSettings):
         return self.llm_api_key or self.openai_api_key
 
     @property
+    def effective_base_url(self) -> str:
+        """Resolve base_url: explicit llm_base_url > openai_base_url > provider default."""
+        if self.llm_base_url:
+            return self.llm_base_url
+        if self.openai_base_url:
+            return self.openai_base_url
+        provider = self.llm_provider
+        cfg = PROVIDER_CONFIG.get(provider, {})
+        return cfg.get("base_url", "https://api.openai.com/v1")
+
+    @property
     def oss_configured(self) -> bool:
         return bool(self.oss_endpoint and self.oss_bucket
                     and self.oss_access_key_id and self.oss_access_key_secret)
