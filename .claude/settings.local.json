@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(C:/Users/jianx/.claude/bin/codeagent-wrapper.exe --backend codex - \"D:\\\\桌面\\\\AI-Resume\" <<'EOF'\nROLE_FILE: C:/Users/jianx/.claude/.ccg/prompts/codex/analyzer.md\n<TASK>\n需求：基于 Tech_design.md 初始化 AI-Resume-Analyzer 项目后端骨架。\n\n项目是智能简历分析系统，后端技术栈：Python 3.10+ / FastAPI / pdfplumber / openai SDK / Redis / 阿里云 FC Serverless。\n\n后端目录结构：\n```\nbackend/\n├── main.py\n├── requirements.txt\n├── .env\n├── api/\n│   ├── dependencies.py\n│   └── v1/\n│       └── analyze.py\n├── core/\n│   ├── config.py\n│   ├── exceptions.py\n│   └── redis.py\n├── models/\n│   └── schemas.py\n└── services/\n    ├── pdf_service.py\n    ├── llm_service.py\n    ├── match_service.py\n    └── cache_service.py\n```\n\n核心 API 契约：\nPOST /api/v1/analyze - multipart/form-data（file: PDF, jd_text: string）\n响应 JSON：{ code, message, data: { candidate_info, overall_score, dimensions[], raw_json } }\n\n请从后端视角分析：\n1. 技术可行性（FastAPI + Python 3.10+ + pdfplumber 的组合是否合理，有没有坑）\n2. 目录结构的合理性（分层架构是否清晰）\n3. 关键风险点（PDF 解析、LLM 调用超时、Serverless 冷启动等）\n4. 推荐的初始化方案和步骤\n</TASK>\nOUTPUT: 技术分析报告，包含可行性评估、架构评价、风险点及初始化方案\nEOF)",
+      "Bash(C:/Users/jianx/.claude/bin/codeagent-wrapper.exe --backend gemini --gemini-model gemini-3-pro-preview - \"D:\\\\桌面\\\\AI-Resume\" <<'EOF'\nROLE_FILE: C:/Users/jianx/.claude/.ccg/prompts/gemini/analyzer.md\n<TASK>\n需求：基于 Tech_design.md 初始化 AI-Resume-Analyzer 项目前端骨架。\n\n前端技术栈：Vue 3 + TypeScript + Vite + Tailwind CSS + shadcn-vue + ECharts + Axios。\n\n前端目录结构：\n```\nfrontend/\n├── index.html\n├── vite.config.ts\n├── src/\n│   ├── main.ts\n│   ├── App.vue\n│   ├── components/\n│   │   └── ui/\n│   ├── features/\n│   │   └── analyzer/\n│   │       ├── components/\n│   │       │   ├── UploadPanel.vue\n│   │       │   ├── ResultBoard.vue\n│   │       │   └── RadarChart.vue\n│   │       ├── composables/\n│   │       │   └── useAnalyzer.ts\n│   │       └── types.ts\n│   ├── services/\n│   │   └── api.ts\n│   └── utils/\n│       └── formatters.ts\n```\n\nUI 设计：左右分栏 Split View\n- 左侧：文件拖拽上传（仅 PDF）+ JD Textarea + \"AI 智能分析\"按钮\n- 右侧：结果看板（候选人姓名 + 匹配度分数）+ 雷达图 + 折叠面板展示 JSON\n\n请从前端视角分析：\n1. Vue 3 + Vite + shadcn-vue 组合的技术可行性和注意事项\n2. 目录结构的合理性（Vertical Slicing 模式）\n3. shadcn-vue 的集成方式和可能的坑\n4. 推荐的初始化步骤和前端路由设计\n</TASK>\nOUTPUT: 前端技术分析报告，包含可行性评估、架构评价、风险点及初始化方案\nEOF)",
+      "Bash(npm --version)",
+      "Bash(pip --version)",
+      "Bash(pip3 --version)",
+      "Bash(npm install:*)",
+      "Bash(command -v node)",
+      "Bash(where node:*)",
+      "Bash(PATH=\"/c/nvm4w/nodejs:$PATH\" npm install 2>&1)"
+    ]
+  }
+}
