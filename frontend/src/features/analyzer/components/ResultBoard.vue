@@ -2,7 +2,7 @@
 import { useAnalyzer } from '../composables/useAnalyzer'
 import RadarChart from './RadarChart.vue'
 
-const { result, loading, asyncStatus, partialResult } = useAnalyzer()
+const { result, loading, asyncStatus, partialResult, error } = useAnalyzer()
 
 function scoreColor(s: number) {
   if (s >= 80) return 'text-green-600'
