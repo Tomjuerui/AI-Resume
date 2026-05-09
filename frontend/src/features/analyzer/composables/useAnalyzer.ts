@@ -3,11 +3,13 @@ import type { AnalysisResult, UploadResult } from '../types'
 import type { ApiError } from '@/services/api'
 import api from '@/services/api'
 
+// Module-level reactive state shared across all consumers
+const loading = ref(false)
+const result = ref<AnalysisResult | null>(null)
+const error = ref<string | null>(null)
+const uploadProgress = ref(0)
+
 export function useAnalyzer() {
-  const loading = ref(false)
-  const result = ref<AnalysisResult | null>(null)
-  const error = ref<string | null>(null)
-  const uploadProgress = ref(0)
 
   async function analyze(file: File, jdText: string) {
     loading.value = true
