@@ -68,3 +68,13 @@ export interface AnalysisResult {
   message: string
   data: AnalysisData | null
 }
+
+/** POST /api/v1/upload response */
+export interface UploadResult {
+  code: number
+  message: string
+  filename: string
+  text_length: number
+  text_preview: string
+  raw_text: string
+}

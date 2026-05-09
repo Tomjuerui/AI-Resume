@@ -16,9 +16,27 @@ const { result, loading } = useAnalyzer()
       <p class="text-lg">Upload a resume and paste a JD to get started</p>
     </div>
 
-    <!-- Loading -->
-    <div v-if="loading" class="flex items-center justify-center h-full">
-      <p class="text-gray-500 text-lg animate-pulse">Analyzing resume...</p>
+    <!-- Loading Skeleton -->
+    <div v-if="loading" class="space-y-6 animate-pulse">
+      <div class="bg-blue-50 rounded-xl p-6 shadow-sm border border-blue-200">
+        <div class="h-5 bg-blue-200 rounded w-1/3 mb-3" />
+        <div class="h-4 bg-blue-100 rounded w-full mb-2" />
+        <div class="h-4 bg-blue-100 rounded w-3/4" />
+      </div>
+      <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div class="h-5 bg-gray-200 rounded w-1/4 mb-4" />
+        <div class="flex items-center gap-6">
+          <div class="w-28 h-28 rounded-full bg-gray-200" />
+          <div class="space-y-2">
+            <div class="h-4 bg-gray-200 rounded w-24" />
+            <div class="h-6 bg-gray-200 rounded w-32" />
+          </div>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div class="h-5 bg-gray-200 rounded w-1/3 mb-4" />
+        <div class="h-80 bg-gray-100 rounded" />
+      </div>
     </div>
 
     <!-- Results -->
@@ -36,11 +54,41 @@ const { result, loading } = useAnalyzer()
       <!-- Overall Score -->
       <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
         <h2 class="text-lg font-semibold text-gray-800 mb-4">Overall Match Score</h2>
-        <div class="flex items-center gap-4">
-          <div class="text-5xl font-bold text-blue-600">
-            {{ result.data.overall_score }}
+        <div class="flex items-center gap-6">
+          <!-- Circular Progress -->
+          <svg viewBox="0 0 120 120" class="w-28 h-28 flex-shrink-0">
+            <circle cx="60" cy="60" r="50" fill="none" stroke="#e5e7eb" stroke-width="10" />
+            <circle
+              cx="60" cy="60" r="50"
+              fill="none"
+              :stroke="result.data.overall_score >= 60 ? '#3b82f6' : '#f97316'"
+              stroke-width="10"
+              :stroke-dasharray="2 * Math.PI * 50"
+              :stroke-dashoffset="2 * Math.PI * 50 * (1 - result.data.overall_score / 100)"
+              stroke-linecap="round"
+              transform="rotate(-90 60 60)"
+              class="transition-all duration-1000 ease-out"
+            />
+            <text
+              x="60" y="65" text-anchor="middle"
+              class="text-2xl font-bold"
+              :fill="result.data.overall_score >= 60 ? '#2563eb' : '#ea580c'"
+            >
+              {{ result.data.overall_score }}
+            </text>
+          </svg>
+          <div>
+            <div class="text-sm text-gray-500 mb-1">Match Rating</div>
+            <div
+              class="text-lg font-semibold"
+              :class="result.data.overall_score >= 80 ? 'text-green-600' : result.data.overall_score >= 60 ? 'text-blue-600' : 'text-orange-500'"
+            >
+              {{ result.data.overall_score >= 80 ? 'Excellent Match' : result.data.overall_score >= 60 ? 'Good Match' : 'Needs Review' }}
+            </div>
+            <div class="text-xs text-gray-400 mt-1">
+              {{ result.data.candidate_info.name || 'Candidate' }}
+            </div>
           </div>
-          <div class="text-sm text-gray-500">/ 100</div>
         </div>
       </div>
 
@@ -217,6 +265,17 @@ const { result, loading } = useAnalyzer()
           </div>
         </div>
       </div>
+
+      <!-- Raw JSON Accordion -->
+      <details
+        v-if="result.data.raw_json && Object.keys(result.data.raw_json).length > 0"
+        class="bg-gray-50 rounded-xl border border-gray-200 group"
+      >
+        <summary class="cursor-pointer px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 select-none">
+          Raw JSON (AI Extraction Output)
+        </summary>
+        <pre class="px-6 pb-4 text-xs text-gray-600 overflow-x-auto leading-relaxed">{{ JSON.stringify(result.data.raw_json, null, 2) }}</pre>
+      </details>
 
       <!-- Candidate Basic Info -->
       <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
