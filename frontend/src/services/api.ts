@@ -58,7 +58,7 @@ function classifyError(error: any): ApiError {
 }
 
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: 'https://ai-resume-serve-fibkzlqfeu.cn-hangzhou.fcapp.run/api/v1',
   timeout: 120000,
   headers: { 'Content-Type': 'application/json' },
 })
