@@ -1,3 +1,5 @@
+from enum import Enum
+
 from pydantic import BaseModel, Field
 
 
@@ -78,6 +80,52 @@ class AnalysisResponse(BaseModel):
     code: int = 200
     message: str = "解析成功"
     data: AnalysisData | None = None
+
+
+# ── Async Task Models ──
+
+class TaskStatus(str, Enum):
+    pending = "pending"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+    expired = "expired"
+
+
+class QuickAnalysisData(BaseModel):
+    """Phase 1 fast response: regex extraction + rule match + async task_id."""
+    task_id: str
+    status: str = "running"
+    candidate_info: CandidateInfo = Field(default_factory=CandidateInfo)
+    overall_score: int = 0
+    summary: str = ""
+    dimensions: list[DimensionScore] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
+    risk_tips: list[str] = Field(default_factory=list)
+    raw_json: dict = Field(default_factory=dict)
+
+
+class QuickAnalysisResponse(BaseModel):
+    code: int = 200
+    message: str = "快速分析完成"
+    data: QuickAnalysisData | None = None
+
+
+class TaskResultData(BaseModel):
+    """Task state for polling endpoint."""
+    task_id: str
+    status: str
+    phase: str = ""
+    progress: int = 0
+    result: AnalysisData | None = None
+    fallback_result: AnalysisData | None = None
+    error: str | None = None
+
+
+class TaskStatusResponse(BaseModel):
+    code: int = 200
+    message: str = "任务状态获取成功"
+    data: TaskResultData | None = None
 
 
 class ErrorResponse(BaseModel):

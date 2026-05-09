@@ -5,6 +5,7 @@ import { bytesToMB } from '@/utils/formatters'
 
 const {
   loading, result, error, uploadProgress,
+  partialResult, asyncStatus,
   analyze, reset,
 } = useAnalyzer()
 
@@ -19,7 +20,7 @@ const isDragging = ref(false)
 const jdCharCount = computed(() => jdText.value.length)
 const jdTooShort = computed(() => jdText.value.length > 0 && jdText.value.trim().length < 10)
 const canSubmit = computed(() =>
-  file.value && jdText.value.trim().length >= 10 && !loading.value,
+  file.value && jdText.value.trim().length >= 10 && !loading.value && asyncStatus.value !== 'polling',
 )
 
 // ── File validation ──
@@ -104,7 +105,7 @@ function onReset() {
     <div class="flex items-center justify-between">
       <h1 class="text-2xl font-bold text-gray-800">AI Resume Analyzer</h1>
       <button
-        v-if="result"
+        v-if="result || partialResult"
         class="text-sm text-blue-600 hover:text-blue-800 transition-colors"
         @click="onReset"
       >

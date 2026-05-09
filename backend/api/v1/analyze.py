@@ -3,6 +3,7 @@ import logging
 import re
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, UploadFile
 
@@ -10,7 +11,9 @@ from core.exceptions import FileValidationError, LLMCallError, ScannedPdfError
 from models.schemas import (
     AnalysisData, AnalysisResponse,
     CandidateInfo, DeepExtraction, DimensionScore,
-    ProjectItem, SkillItem, WorkExperience,
+    ProjectItem, QuickAnalysisData, QuickAnalysisResponse,
+    SkillItem, TaskResultData, TaskStatus, TaskStatusResponse,
+    WorkExperience,
 )
 from services import pdf_service, llm_service, match_service, cache_service, oss_service
 
@@ -79,116 +82,106 @@ async def _upload_to_oss(file_bytes: bytes, filename: str) -> None:
         logger.warning("OSS upload skipped: %s", e)
 
 
-@router.post("/analyze", response_model=AnalysisResponse)
-async def analyze_resume(
-    file: UploadFile = File(...),
-    jd_text: str = Form(...),
-):
-    """Upload a PDF resume and JD. Returns deep extraction + rubric-based match scores."""
-    # 1. Read file bytes + validate
-    file_bytes = await file.read()
-    validate_file(file, file_bytes)
+def _candidate_from_extraction(extraction: dict) -> CandidateInfo:
+    return CandidateInfo(
+        name=extraction.get("name", ""),
+        phone=extraction.get("phone", ""),
+        email=extraction.get("email", ""),
+        address=extraction.get("address", ""),
+        years_of_experience=extraction.get("years_of_experience", ""),
+        highest_degree=extraction.get("highest_degree", ""),
+        school=extraction.get("school", ""),
+        major=extraction.get("major", ""),
+    )
 
-    # Validate JD text
-    jd_text = jd_text.strip()
-    if len(jd_text) < MIN_JD_LENGTH:
-        raise FileValidationError(
-            f"岗位描述文本过短（{len(jd_text)}字符），请至少填写{MIN_JD_LENGTH}个字符"
-        )
 
-    logger.info("Received file: %s, size=%d bytes, jd_text_len=%d",
-                file.filename, len(file_bytes), len(jd_text))
+def _safe_task_error(exc: Exception) -> str:
+    """Return a generic error message for task failures; log details internally."""
+    logger.debug("Internal task error detail: %r", exc)
+    return "AI deep analysis failed; showing rule-based fallback result."
 
-    # 1.5 Check cache (by file MD5 + JD hash)
-    file_md5 = pdf_service.compute_md5_bytes(file_bytes)
-    cached = await cache_service.get_cached_result(file_md5, jd_text)
-    if cached:
-        logger.info("Cache hit for file_md5=%s, returning cached result", file_md5)
-        return AnalysisResponse(**cached)
 
-    # 2. Save to temp file
-    suffix = Path(file.filename).suffix if file.filename else ".pdf"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(file_bytes)
-        tmp_path = Path(tmp.name)
+def _dict_items(value: object) -> list[dict]:
+    """Filter a list to only dict items, ignoring strings or other primitives LLM may emit."""
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
-    try:
-        # 3. Extract + clean PDF text
-        raw_text = await pdf_service.extract_text(tmp_path)
-        logger.info("Raw text: %d chars", len(raw_text))
 
-        cleaned_text = pdf_service.clean_text(raw_text)
-        logger.info("Cleaned text: %d chars", len(cleaned_text))
-
-        # 4. Scanned PDF check
-        if pdf_service.is_scanned_pdf(cleaned_text):
-            raise ScannedPdfError(
-                "不支持扫描件，请提供文本型 PDF（非图片版）"
+def _normalize_deep_extraction(deep_result: dict) -> DeepExtraction:
+    raw_languages = deep_result.get("languages", [])
+    normalized_languages: list[str] = []
+    for lang in raw_languages:
+        if isinstance(lang, dict) and lang.get("name"):
+            level = lang.get("level", "")
+            normalized_languages.append(
+                f"{lang['name']} ({level})" if level else lang["name"]
             )
+        elif isinstance(lang, str):
+            normalized_languages.append(lang)
 
-        # ── 5. Deep Extraction (P1) — candidate profile ──
-        deep_extraction: DeepExtraction | None = None
+    return DeepExtraction(
+        name=deep_result.get("name", ""),
+        phone=deep_result.get("phone", ""),
+        email=deep_result.get("email", ""),
+        address=deep_result.get("address", ""),
+        years_of_experience=deep_result.get("years_of_experience", ""),
+        highest_degree=deep_result.get("highest_degree", ""),
+        school=deep_result.get("school", ""),
+        major=deep_result.get("major", ""),
+        skills=[SkillItem(**s) for s in _dict_items(deep_result.get("skills", []))],
+        work_experience=[WorkExperience(**w) for w in _dict_items(deep_result.get("work_experience", []))],
+        projects=[ProjectItem(**p) for p in _dict_items(deep_result.get("projects", []))],
+        certificates=deep_result.get("certificates", []),
+        languages=normalized_languages,
+    )
+
+
+async def _run_deep_analysis(
+    task_id: str,
+    file_md5: str,
+    jd_text: str,
+    cleaned_text: str,
+    fallback_data: AnalysisData,
+) -> None:
+    """Phase 2: LLM deep extraction + rubric scoring in background."""
+    try:
+        await cache_service.set_task_state(task_id, {
+            "task_id": task_id,
+            "status": TaskStatus.running.value,
+            "phase": "llm_deep_extraction",
+            "progress": 30,
+            "result": None,
+            "fallback_result": fallback_data.model_dump(),
+            "error": None,
+        })
+
         extraction: dict = {}
+        deep_extraction: DeepExtraction | None = None
         try:
             deep_result = await llm_service.extract_resume_deep(cleaned_text)
-            extraction = deep_result  # also use for basic info
-            # Normalize languages: LLM may return strings or {name, level} dicts
-            raw_languages = deep_result.get("languages", [])
-            normalized_languages: list[str] = []
-            for lang in raw_languages:
-                if isinstance(lang, dict) and lang.get("name"):
-                    level = lang.get("level", "")
-                    normalized_languages.append(
-                        f"{lang['name']} ({level})" if level else lang["name"]
-                    )
-                elif isinstance(lang, str):
-                    normalized_languages.append(lang)
+            extraction = deep_result
+            deep_extraction = _normalize_deep_extraction(deep_result)
+            logger.info("Task %s: deep extraction OK, skills=%d", task_id, len(deep_extraction.skills))
+        except Exception as e:
+            logger.warning("Task %s: deep extraction failed, using regex fallback", task_id, exc_info=e)
+            extraction = fallback_data.raw_json
 
-            deep_extraction = DeepExtraction(
-                name=deep_result.get("name", ""),
-                phone=deep_result.get("phone", ""),
-                email=deep_result.get("email", ""),
-                address=deep_result.get("address", ""),
-                years_of_experience=deep_result.get("years_of_experience", ""),
-                highest_degree=deep_result.get("highest_degree", ""),
-                school=deep_result.get("school", ""),
-                major=deep_result.get("major", ""),
-                skills=[SkillItem(**s) for s in deep_result.get("skills", [])],
-                work_experience=[WorkExperience(**w) for w in deep_result.get("work_experience", [])],
-                projects=[ProjectItem(**p) for p in deep_result.get("projects", [])],
-                certificates=deep_result.get("certificates", []),
-                languages=normalized_languages,
-            )
-            logger.info("Deep extraction OK: skills=%d, work=%d, projects=%d",
-                        len(deep_extraction.skills),
-                        len(deep_extraction.work_experience),
-                        len(deep_extraction.projects))
-        except LLMCallError as e:
-            logger.warning("Deep extraction failed, using basic: %s", e)
-            try:
-                extraction = await llm_service.extract_resume_info(cleaned_text)
-            except LLMCallError:
-                extraction = _regex_extract(cleaned_text)
+        await cache_service.set_task_state(task_id, {
+            "task_id": task_id,
+            "status": TaskStatus.running.value,
+            "phase": "llm_rubric_scoring",
+            "progress": 70,
+            "result": None,
+            "fallback_result": fallback_data.model_dump(),
+            "error": None,
+        })
 
-        candidate_info = CandidateInfo(
-            name=extraction.get("name", ""),
-            phone=extraction.get("phone", ""),
-            email=extraction.get("email", ""),
-            address=extraction.get("address", ""),
-            years_of_experience=extraction.get("years_of_experience", ""),
-            highest_degree=extraction.get("highest_degree", ""),
-            school=extraction.get("school", ""),
-            major=extraction.get("major", ""),
-        )
-
-        # ── 6. Rule-based matching (P0, always runs as fallback) ──
-        rule_match = match_service.calculate_rule_match(cleaned_text, jd_text)
-
-        # ── 7. AI Rubric Scoring (P1) ──
-        overall_score = rule_match["overall_score"]
-        summary = ""
-        dimensions: list[DimensionScore] = []
-        missing_skills: list[str] = []
+        candidate_info = _candidate_from_extraction(extraction)
+        overall_score = fallback_data.overall_score
+        summary = fallback_data.summary
+        dimensions = fallback_data.dimensions
+        missing_skills = fallback_data.missing_skills
 
         try:
             rubric = await llm_service.score_resume_vs_jd(cleaned_text, jd_text)
@@ -200,46 +193,202 @@ async def analyze_resume(
                 summary = rubric["summary"]
             if rubric.get("missing_skills"):
                 missing_skills = rubric["missing_skills"]
-            logger.info("Rubric scoring used: overall=%d, summary=%s",
-                        overall_score, summary[:50])
-        except LLMCallError as e:
-            logger.warning("Rubric scoring failed, using rule-based: %s", e)
-            dimensions = [DimensionScore(**d) for d in rule_match["dimensions"]]
-            missing_skills = [
-                r.replace("缺失技能：", "") for r in rule_match.get("risks", [])
-                if r.startswith("缺失技能：")
-            ]
+            logger.info("Task %s: rubric scoring OK, overall=%d", task_id, overall_score)
         except Exception as e:
-            logger.warning("Rubric scoring unexpected error, using rule-based: %s", e)
-            dimensions = [DimensionScore(**d) for d in rule_match["dimensions"]]
+            logger.warning("Task %s: rubric scoring failed, using rule-based", task_id, exc_info=e)
 
-        response = AnalysisResponse(
+        final_data = AnalysisData(
+            candidate_info=candidate_info,
+            overall_score=overall_score,
+            summary=summary,
+            dimensions=dimensions,
+            missing_skills=missing_skills,
+            risk_tips=fallback_data.risk_tips,
+            deep_extraction=deep_extraction,
+            raw_json=extraction,
+        )
+        final_response = AnalysisResponse(code=200, message="解析成功", data=final_data)
+
+        await cache_service.set_final_result(file_md5, jd_text, final_response.model_dump())
+        await cache_service.set_task_state(task_id, {
+            "task_id": task_id,
+            "status": TaskStatus.succeeded.value,
+            "phase": "completed",
+            "progress": 100,
+            "result": final_data.model_dump(),
+            "fallback_result": fallback_data.model_dump(),
+            "error": None,
+        })
+        logger.info("Task %s: completed successfully", task_id)
+
+    except Exception as e:
+        logger.exception("Task %s: failed", task_id)
+        await cache_service.set_task_state(task_id, {
+            "task_id": task_id,
+            "status": TaskStatus.failed.value,
+            "phase": "failed",
+            "progress": 100,
+            "result": None,
+            "fallback_result": fallback_data.model_dump(),
+            "error": _safe_task_error(e),
+        })
+
+
+@router.post("/analyze")
+async def analyze_resume(
+    file: UploadFile = File(...),
+    jd_text: str = Form(...),
+):
+    """Upload a PDF resume and JD.
+
+    Phase 1 (fast, <2s): PDF extraction + regex basic info + rule match + returns immediately with task_id.
+    Phase 2 (background): LLM deep extraction + rubric scoring. Poll GET /analyze/tasks/{task_id}.
+    """
+    file_bytes = await file.read()
+    validate_file(file, file_bytes)
+
+    jd_text = jd_text.strip()
+    if len(jd_text) < MIN_JD_LENGTH:
+        raise FileValidationError(
+            f"岗位描述文本过短（{len(jd_text)}字符），请至少填写{MIN_JD_LENGTH}个字符"
+        )
+
+    logger.info("Received file: %s, size=%d bytes, jd_text_len=%d",
+                file.filename, len(file_bytes), len(jd_text))
+
+    # Check final cache first (complete async result)
+    file_md5 = pdf_service.compute_md5_bytes(file_bytes)
+    final_cached = await cache_service.get_final_result(file_md5, jd_text)
+    if final_cached:
+        logger.info("Final cache hit for file_md5=%s, returning complete result", file_md5)
+        return AnalysisResponse(**final_cached)
+
+    # Check for existing in-progress task (idempotent submit)
+    existing_task_id = await cache_service.get_task_index(file_md5, jd_text)
+    if existing_task_id:
+        existing_state = await cache_service.get_task_state(existing_task_id)
+        if existing_state and existing_state.get("status") in ("pending", "running"):
+            logger.info("Reusing existing task: %s", existing_task_id)
+            fb = existing_state.get("fallback_result") or {}
+            ci_data = fb.get("candidate_info", {})
+            return QuickAnalysisResponse(
+                code=200,
+                message="分析任务已存在",
+                data=QuickAnalysisData(
+                    task_id=existing_task_id,
+                    status=existing_state["status"],
+                    candidate_info=CandidateInfo(**ci_data) if ci_data else CandidateInfo(),
+                    overall_score=fb.get("overall_score", 0),
+                    summary=fb.get("summary", ""),
+                    dimensions=[DimensionScore(**d) for d in fb.get("dimensions", [])],
+                    missing_skills=fb.get("missing_skills", []),
+                    risk_tips=fb.get("risk_tips", []),
+                    raw_json=fb.get("raw_json", {}),
+                ),
+            )
+
+    # Save to temp file
+    suffix = Path(file.filename).suffix if file.filename else ".pdf"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = Path(tmp.name)
+
+    try:
+        # Extract + clean PDF text
+        raw_text = await pdf_service.extract_text(tmp_path)
+        cleaned_text = pdf_service.clean_text(raw_text)
+        logger.info("Cleaned text: %d chars", len(cleaned_text))
+
+        # Scanned PDF check
+        if pdf_service.is_scanned_pdf(cleaned_text):
+            raise ScannedPdfError("不支持扫描件，请提供文本型 PDF（非图片版）")
+
+        # Phase 1: regex basic info extraction (no LLM call)
+        extraction = _regex_extract(cleaned_text)
+        candidate_info = _candidate_from_extraction(extraction)
+
+        # Phase 1: rule-based matching (pure CPU, always runs)
+        rule_match = match_service.calculate_rule_match(cleaned_text, jd_text)
+        dimensions = [DimensionScore(**d) for d in rule_match.get("dimensions", [])]
+        missing_skills = [
+            r.replace("缺失技能：", "") for r in rule_match.get("risks", [])
+            if r.startswith("缺失技能：")
+        ]
+
+        # Create async task and store fallback data
+        task_id = str(uuid4())
+        fallback_data = AnalysisData(
+            candidate_info=candidate_info,
+            overall_score=rule_match.get("overall_score", 0),
+            summary="规则初评完成，AI 深度分析进行中",
+            dimensions=dimensions,
+            missing_skills=missing_skills,
+            risk_tips=rule_match.get("risks", []),
+            deep_extraction=None,
+            raw_json=extraction,
+        )
+
+        await cache_service.set_task_state(task_id, {
+            "task_id": task_id,
+            "status": TaskStatus.running.value,
+            "phase": "queued",
+            "progress": 10,
+            "result": None,
+            "fallback_result": fallback_data.model_dump(),
+            "error": None,
+        })
+        await cache_service.set_task_index(file_md5, jd_text, task_id)
+
+        # Launch Phase 2 in background (LLM deep extraction + rubric scoring)
+        asyncio.create_task(
+            _run_deep_analysis(task_id, file_md5, jd_text, cleaned_text, fallback_data)
+        )
+
+        # Fire-and-forget OSS upload
+        if file.filename:
+            asyncio.create_task(_upload_to_oss(file_bytes, file.filename))
+
+        return QuickAnalysisResponse(
             code=200,
-            message="解析成功",
-            data=AnalysisData(
+            message="快速分析完成",
+            data=QuickAnalysisData(
+                task_id=task_id,
+                status="running",
                 candidate_info=candidate_info,
-                overall_score=overall_score,
-                summary=summary,
+                overall_score=fallback_data.overall_score,
+                summary=fallback_data.summary,
                 dimensions=dimensions,
                 missing_skills=missing_skills,
-                risk_tips=rule_match.get("risks", []),
-                deep_extraction=deep_extraction,
+                risk_tips=fallback_data.risk_tips,
                 raw_json=extraction,
             ),
         )
 
-        # Cache the result for future identical requests
-        await cache_service.set_cached_result(
-            file_md5, jd_text, response.model_dump()
-        )
-
-        # Fire-and-forget OSS upload (non-blocking)
-        if file.filename:
-            asyncio.create_task(
-                _upload_to_oss(file_bytes, file.filename)
-            )
-
-        return response
-
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+@router.get("/analyze/tasks/{task_id}")
+async def get_task_status(task_id: str):
+    """Poll async deep-analysis task status."""
+    state = await cache_service.get_task_state(task_id)
+    if not state:
+        return TaskStatusResponse(
+            code=404,
+            message="任务不存在或已过期",
+            data=TaskResultData(
+                task_id=task_id,
+                status=TaskStatus.expired.value,
+                phase="expired",
+                progress=100,
+                result=None,
+                fallback_result=None,
+                error="task not found or expired",
+            ),
+        )
+
+    return TaskStatusResponse(
+        code=200,
+        message="任务状态获取成功",
+        data=TaskResultData(**state),
+    )

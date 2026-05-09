@@ -69,6 +69,36 @@ export interface AnalysisResult {
   data: AnalysisData | null
 }
 
+/** Phase 1 quick analysis response */
+export interface QuickAnalysisData {
+  task_id: string
+  status: string
+  candidate_info: CandidateInfo
+  overall_score: number
+  summary: string
+  dimensions: DimensionScore[]
+  missing_skills: string[]
+  risk_tips: string[]
+  raw_json: Record<string, unknown>
+}
+
+/** GET /api/v1/analyze/tasks/{task_id} response */
+export interface TaskStatusData {
+  task_id: string
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'expired'
+  phase: string
+  progress: number
+  result: AnalysisData | null
+  fallback_result: AnalysisData | null
+  error: string | null
+}
+
+export interface TaskStatusResult {
+  code: number
+  message: string
+  data: TaskStatusData | null
+}
+
 /** POST /api/v1/upload response */
 export interface UploadResult {
   code: number
