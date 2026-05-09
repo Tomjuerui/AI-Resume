@@ -315,7 +315,7 @@ def test_rule_based_matching():
     assert result["overall_score"] > 0, "Should have positive score"
     print(f"  Overall score: {result['overall_score']}/100")
 
-    assert len(result["dimensions"]) == 4, "Should have 4 dimensions"
+    assert len(result["dimensions"]) == 3, "Should have 3 dimensions (aligned with System Prompt rubric)"
     for dim in result["dimensions"]:
         assert 0 <= dim["score"] <= 100, f"Score out of range: {dim}"
         print(f"  {dim['name']}: {dim['score']} — {dim['reason']}")
@@ -400,9 +400,8 @@ def test_schema_with_dimensions():
             overall_score=78,
             dimensions=[
                 DimensionScore(name="技能匹配度", score=85, reason="匹配Java/Spring/Docker"),
-                DimensionScore(name="经验相关性", score=70, reason="5年相关经验"),
-                DimensionScore(name="教育背景", score=90, reason="硕士学历符合要求"),
-                DimensionScore(name="综合素养", score=65, reason="沟通能力良好"),
+                DimensionScore(name="项目经验相关性", score=70, reason="5年相关经验"),
+                DimensionScore(name="背景与加分项", score=78, reason="硕士学历 + 沟通能力良好"),
             ],
             risk_tips=["缺失技能：Kubernetes", "项目经验描述不够详细"],
             raw_json={"skill_details": "..."},
@@ -414,7 +413,7 @@ def test_schema_with_dimensions():
 
     assert data["code"] == 200
     assert data["data"]["overall_score"] == 78
-    assert len(data["data"]["dimensions"]) == 4
+    assert len(data["data"]["dimensions"]) == 3
     assert len(data["data"]["risk_tips"]) == 2
     print(f"  Serialized: {json_str[:120]}...")
     print("  PASSED\n")

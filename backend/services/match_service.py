@@ -194,25 +194,32 @@ def calculate_rule_match(resume_text: str, jd_text: str) -> dict:
                 len(jd_keywords["skills"]), len(jd_keywords["soft_skills"]),
                 len(jd_keywords["education"]), len(jd_keywords["experience"]))
 
-    # Score each dimension
+    # Score each sub-dimension
     skill_score, skill_reason = _score_skills(resume_text, jd_keywords)
     exp_score, exp_reason = _score_experience(resume_text, jd_keywords)
     edu_score, edu_reason = _score_education(resume_text, jd_keywords)
     soft_score, soft_reason = _score_soft_skills(resume_text, jd_keywords)
 
+    # Merge education + soft skills → "背景与加分项" (align with System Prompt.md rubric)
+    bg_score = int(edu_score * 0.5 + soft_score * 0.5)
+    bg_reason_parts: list[str] = []
+    if jd_keywords.get("education"):
+        bg_reason_parts.append(edu_reason)
+    if jd_keywords.get("soft_skills"):
+        bg_reason_parts.append(soft_reason)
+    bg_reason = "；".join(bg_reason_parts) if bg_reason_parts else "未在JD中发现学历或软技能要求，给予基准分"
+
     dimensions = [
         {"name": "技能匹配度", "score": skill_score, "reason": skill_reason},
-        {"name": "经验相关性", "score": exp_score, "reason": exp_reason},
-        {"name": "教育背景", "score": edu_score, "reason": edu_reason},
-        {"name": "综合素养", "score": soft_score, "reason": soft_reason},
+        {"name": "项目经验相关性", "score": exp_score, "reason": exp_reason},
+        {"name": "背景与加分项", "score": bg_score, "reason": bg_reason},
     ]
 
-    # Weighted overall (skills 40%, experience 30%, education 15%, soft 15%)
+    # Weighted overall (aligned with System Prompt.md: 50% / 35% / 15%)
     overall = int(
-        skill_score * 0.40 +
-        exp_score * 0.30 +
-        edu_score * 0.15 +
-        soft_score * 0.15
+        skill_score * 0.50 +
+        exp_score * 0.35 +
+        bg_score * 0.15
     )
 
     risks = _identify_risks(resume_text, jd_keywords)
