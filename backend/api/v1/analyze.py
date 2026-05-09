@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import tempfile
@@ -11,7 +12,7 @@ from models.schemas import (
     CandidateInfo, DeepExtraction, DimensionScore,
     ProjectItem, SkillItem, WorkExperience,
 )
-from services import pdf_service, llm_service, match_service
+from services import pdf_service, llm_service, match_service, cache_service, oss_service
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api/v1")
 ALLOWED_EXTENSIONS = {".pdf"}
 ALLOWED_MIME_TYPES = {"application/pdf", "application/octet-stream"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MIN_JD_LENGTH = 10  # Minimum meaningful JD text length
 
 
 def _regex_extract(text: str) -> dict:
@@ -68,6 +70,15 @@ def validate_file(file: UploadFile, file_bytes: bytes) -> None:
         )
 
 
+async def _upload_to_oss(file_bytes: bytes, filename: str) -> None:
+    """Background task: upload PDF to OSS for archival."""
+    try:
+        url = await oss_service.upload_pdf(file_bytes, filename)
+        logger.info("OSS upload OK: %s -> %s", filename, url)
+    except Exception as e:
+        logger.warning("OSS upload skipped: %s", e)
+
+
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_resume(
     file: UploadFile = File(...),
@@ -78,8 +89,22 @@ async def analyze_resume(
     file_bytes = await file.read()
     validate_file(file, file_bytes)
 
+    # Validate JD text
+    jd_text = jd_text.strip()
+    if len(jd_text) < MIN_JD_LENGTH:
+        raise FileValidationError(
+            f"岗位描述文本过短（{len(jd_text)}字符），请至少填写{MIN_JD_LENGTH}个字符"
+        )
+
     logger.info("Received file: %s, size=%d bytes, jd_text_len=%d",
                 file.filename, len(file_bytes), len(jd_text))
+
+    # 1.5 Check cache (by file MD5 + JD hash)
+    file_md5 = pdf_service.compute_md5_bytes(file_bytes)
+    cached = await cache_service.get_cached_result(file_md5, jd_text)
+    if cached:
+        logger.info("Cache hit for file_md5=%s, returning cached result", file_md5)
+        return AnalysisResponse(**cached)
 
     # 2. Save to temp file
     suffix = Path(file.filename).suffix if file.filename else ".pdf"
@@ -188,7 +213,7 @@ async def analyze_resume(
             logger.warning("Rubric scoring unexpected error, using rule-based: %s", e)
             dimensions = [DimensionScore(**d) for d in rule_match["dimensions"]]
 
-        return AnalysisResponse(
+        response = AnalysisResponse(
             code=200,
             message="解析成功",
             data=AnalysisData(
@@ -202,6 +227,19 @@ async def analyze_resume(
                 raw_json=extraction,
             ),
         )
+
+        # Cache the result for future identical requests
+        await cache_service.set_cached_result(
+            file_md5, jd_text, response.model_dump()
+        )
+
+        # Fire-and-forget OSS upload (non-blocking)
+        if file.filename:
+            asyncio.create_task(
+                _upload_to_oss(file_bytes, file.filename)
+            )
+
+        return response
 
     finally:
         tmp_path.unlink(missing_ok=True)

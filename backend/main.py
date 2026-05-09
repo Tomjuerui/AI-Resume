@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.v1.analyze import router as analyze_router
+from api.v1.upload import router as upload_router
 from core.config import settings
 from core.exceptions import (
     CacheError,
@@ -38,6 +39,7 @@ app.add_middleware(
 
 # Routes
 app.include_router(analyze_router)
+app.include_router(upload_router)
 
 
 # ── Global Exception Handlers ──

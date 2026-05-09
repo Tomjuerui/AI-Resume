@@ -102,3 +102,8 @@ def compute_md5(file_path: Path) -> str:
         for chunk in iter(lambda: f.read(8192), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def compute_md5_bytes(data: bytes) -> str:
+    """Compute MD5 hash of bytes (for cache key without file I/O)."""
+    return hashlib.md5(data).hexdigest()

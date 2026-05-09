@@ -5,6 +5,7 @@ import logging
 from openai import AsyncOpenAI
 from core.config import settings, PROVIDER_CONFIG
 from core.exceptions import LLMCallError
+from core.pii_mask import mask_name
 
 logger = logging.getLogger(__name__)
 
@@ -291,7 +292,7 @@ async def extract_resume_info(resume_text: str) -> dict:
         if field not in result:
             result[field] = ""
 
-    logger.info("Extraction OK: name=%s", result.get("name"))
+    logger.info("Extraction OK: name=%s", mask_name(result.get("name", "")))
     return result
 
 
