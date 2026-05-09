@@ -59,13 +59,28 @@ function classifyError(error: any): ApiError {
 
 const api = axios.create({
   baseURL: '/api/v1',
-  timeout: 60000,
+  timeout: 120000,
   headers: { 'Content-Type': 'application/json' },
 })
 
+// Request interceptor
+api.interceptors.request.use(
+  (config) => {
+    console.debug('[API Request]', config.method?.toUpperCase(), config.url)
+    return config
+  },
+  (error) => {
+    console.error('[API Request Error]', error)
+    return Promise.reject(error)
+  }
+)
+
 // Response interceptor
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.debug('[API Response]', response.status, response.data)
+    return response
+  },
   (error) => {
     console.error('[API Error]', error)
     const apiError = classifyError(error)
