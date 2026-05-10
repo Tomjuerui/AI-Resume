@@ -99,7 +99,6 @@ export function useAnalyzer() {
 
     try {
       const { data } = await api.post<AnalysisResult>('/analyze', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (e) => {
           if (e.total) {
             uploadProgress.value = Math.round((e.loaded / e.total) * 100)
@@ -137,7 +136,6 @@ export function useAnalyzer() {
 
     try {
       const { data } = await api.post<UploadResult>('/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (e) => {
           if (e.total) {
             uploadProgress.value = Math.round((e.loaded / e.total) * 100)
