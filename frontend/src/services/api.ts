@@ -58,7 +58,7 @@ function classifyError(error: any): ApiError {
 }
 
 const api = axios.create({
-  baseURL: 'https://ai-resuanalyzer-fvpniheiti.cn-beijing.fcapp.run/api/v1',
+  baseURL: 'https://ai-resu-backend-uqfkmzmght.cn-beijing.fcapp.run/api/v1',
   timeout: 120000,
   headers: { 'Content-Type': 'application/json' },
 })
