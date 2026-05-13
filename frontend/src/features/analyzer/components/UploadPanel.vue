@@ -101,46 +101,66 @@ function onReset() {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-gray-800">AI Resume Analyzer</h1>
-      <button
-        v-if="result || partialResult"
-        class="text-sm text-blue-600 hover:text-blue-800 transition-colors"
-        @click="onReset"
-      >
-        + New Analysis
-      </button>
+  <div class="space-y-5">
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 -mx-6 -mt-6 px-6 pt-5 pb-4 border-b border-blue-100">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="text-2xl">📄</span>
+          <h1 class="text-xl font-bold text-gray-800">AI 简历分析</h1>
+        </div>
+        <button
+          v-if="result || partialResult"
+          class="text-sm text-blue-600 hover:text-blue-800 transition-colors font-medium"
+          @click="onReset"
+        >
+          + 新建分析
+        </button>
+      </div>
+      <p class="text-xs text-gray-500 mt-1.5 ml-9">上传简历 PDF 并粘贴职位描述，智能匹配分析</p>
     </div>
 
-    <!-- JD Input -->
+    <!-- Step 1: JD Input -->
     <div>
-      <label class="block text-sm font-medium text-gray-700 mb-2">
-        Job Description (JD)
-      </label>
-      <textarea
-        v-model="jdText"
-        rows="10"
-        class="w-full border rounded-lg p-3 text-sm outline-none resize-none transition-colors"
-        :class="jdTooShort ? 'border-orange-300 focus:ring-2 focus:ring-orange-500' : 'border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent'"
-        placeholder="Paste the job description here..."
-      />
+      <div class="flex items-center gap-1.5 mb-2">
+        <span class="flex-shrink-0 w-5 h-5 bg-blue-500 text-white text-xs rounded-full flex items-center justify-center font-medium">1</span>
+        <label class="text-sm font-medium text-gray-700">职位描述 (JD)</label>
+        <span class="text-xs text-gray-400">— 请输入要匹配的目标职位要求</span>
+      </div>
+      <div class="relative">
+        <textarea
+          v-model="jdText"
+          rows="9"
+          class="w-full border rounded-lg p-3 text-sm outline-none resize-none transition-colors"
+          :class="jdTooShort ? 'border-orange-300 focus:ring-2 focus:ring-orange-500' : 'border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent'"
+          placeholder="请粘贴职位描述内容..."
+        />
+        <span
+          v-if="jdText.length > 0"
+          class="absolute bottom-2 right-3 text-xs"
+          :class="jdTooShort ? 'text-orange-400' : 'text-gray-400'"
+        >
+          已输入 {{ jdCharCount }} 字
+        </span>
+      </div>
       <p
         v-if="jdText.length > 0 && jdCharCount < 10"
         class="mt-1 text-xs text-orange-500"
       >
-        JD text too short ({{ jdCharCount }}/10 characters minimum)
+        职位描述过短 ({{ jdCharCount }}/最少10个字符)
       </p>
     </div>
 
-    <!-- File Upload -->
+    <!-- Step 2: File Upload -->
     <div>
-      <label class="block text-sm font-medium text-gray-700 mb-2">
-        Upload Resume (PDF)
-      </label>
+      <div class="flex items-center gap-1.5 mb-2">
+        <span class="flex-shrink-0 w-5 h-5 bg-blue-500 text-white text-xs rounded-full flex items-center justify-center font-medium">2</span>
+        <label class="text-sm font-medium text-gray-700">上传简历 (PDF)</label>
+        <span class="text-xs text-gray-400">— 支持 PDF 格式，最大 10MB</span>
+      </div>
       <div
-        class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors"
-        :class="isDragging ? 'border-blue-400 bg-blue-50' : fileName ? 'border-green-300 bg-green-50' : 'border-gray-300 hover:border-blue-400'"
+        class="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-lg cursor-pointer transition-all"
+        :class="isDragging ? 'border-blue-400 bg-blue-50 scale-[1.02]' : fileName ? 'border-green-300 bg-green-50/50' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'"
         @dragenter="onDragEnter"
         @dragover="onDragOver"
         @dragleave="onDragLeave"
@@ -148,12 +168,17 @@ function onReset() {
         @click="fileInput?.click()"
       >
         <div v-if="fileName" class="text-center">
-          <div class="text-sm font-medium text-gray-700">{{ fileName }}</div>
+          <div class="text-3xl mb-1">📄</div>
+          <div class="text-sm font-medium text-gray-700 flex items-center justify-center gap-1">
+            <span class="text-green-500">✓</span>
+            {{ fileName }}
+          </div>
           <div class="text-xs text-gray-400 mt-1">{{ fileSize }}</div>
         </div>
-        <div v-else class="text-sm text-gray-500 text-center">
-          <div>Drag & drop PDF here</div>
-          <div class="text-xs text-gray-400 mt-1">or click to browse</div>
+        <div v-else class="text-center">
+          <div class="text-3xl mb-1">📂</div>
+          <div class="text-sm text-gray-500">拖拽 PDF 文件到此处</div>
+          <div class="text-xs text-gray-400 mt-1">或点击浏览文件</div>
         </div>
       </div>
       <input
@@ -171,7 +196,7 @@ function onReset() {
       class="w-full bg-gray-200 rounded-full h-2 overflow-hidden"
     >
       <div
-        class="bg-blue-500 h-2 rounded-full transition-all duration-300"
+        class="bg-gradient-to-r from-blue-400 to-indigo-500 h-2 rounded-full transition-all duration-300"
         :style="{ width: uploadProgress + '%' }"
       />
     </div>
@@ -179,12 +204,15 @@ function onReset() {
     <!-- Submit -->
     <button
       :disabled="!canSubmit"
-      class="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+      class="w-full py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg font-medium hover:from-blue-600 hover:to-indigo-700 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg disabled:shadow-none"
       @click="onSubmit"
     >
-      <span v-if="loading && uploadProgress > 0">Uploading {{ uploadProgress }}%...</span>
-      <span v-else-if="loading">Analyzing...</span>
-      <span v-else>Analyze Resume</span>
+      <span v-if="loading && uploadProgress > 0">上传中 {{ uploadProgress }}%...</span>
+      <span v-else-if="loading">
+        <span class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2 align-text-bottom" />
+        分析中...
+      </span>
+      <span v-else>开始分析</span>
     </button>
 
     <!-- Client-side Error -->
